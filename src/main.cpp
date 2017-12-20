@@ -19,17 +19,27 @@
 
 #include <QLocale>
 #include <QTranslator>
+#include "vendor/Console.hpp"
 
 using namespace bb;
 
-int main(int argc, char **argv)
-{
+void myMessageOutput(QtMsgType type, const char* msg) {  // <-- ADD THIS
+    Q_UNUSED(type);
+    fprintf(stdout, "%s\n", msg);
+    fflush(stdout);
+
+    QSettings settings;
+    if (settings.value("sendToConsoleDebug", true).toBool()) {
+        Console* console = new Console();
+        console->sendMessage("ConsoleThis$$" + QString(msg));
+        console->deleteLater();
+    }
+}
+
+int main(int argc, char **argv) {
+    qInstallMsgHandler(myMessageOutput);
+
     Application app(argc, argv);
-
-    // Create the Application UI object, this is where the main.qml file
-    // is loaded and the application scene is set.
     Service srv;
-
-    // Enter the application main event loop.
     return Application::exec();
 }

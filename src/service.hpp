@@ -18,6 +18,18 @@
 #define SERVICE_H_
 
 #include <QObject>
+#include <QNetworkReply>
+#include <qdropbox/QDropbox.hpp>
+#include <qdropbox/QDropboxFile.hpp>
+#include <QFileSystemWatcher>
+#include "util/FileUtil.hpp"
+#include <qdropbox/Logger.hpp>
+#include <QStringList>
+#include <QQueue>
+#include <QFile>
+#include "Watcher.hpp"
+
+#define UPLOAD_SIZE (1048576 / 4)
 
 namespace bb {
     class Application;
@@ -30,21 +42,110 @@ namespace bb {
     }
 }
 
-class Service: public QObject
-{
+struct Upload : public QObject {
+    Upload(const QString& path, const QString& remotePath, QObject* parent = 0) : QObject(parent), offset(0), path(path), remotePath(remotePath), sessionId("") {
+        size = 0;
+    }
+
+    Upload(const Upload& upload) : QObject(upload.parent()) {
+        swap(upload);
+    }
+
+    Upload& operator=(const Upload& upload) {
+        swap(upload);
+        return *this;
+    }
+
+    qint64 offset;
+    qint64 size;
+    QString path;
+    QString remotePath;
+    QString sessionId;
+
+    void swap(const Upload& upload) {
+        offset = upload.offset;
+        path = upload.path;
+        remotePath = upload.remotePath;
+        sessionId = upload.sessionId;
+        resize();
+    }
+
+    void resize() {
+        QFile file(path);
+        size = file.size();
+    }
+
+    void increment() {
+        offset += UPLOAD_SIZE;
+    }
+
+    bool isNew() {
+        return sessionId.compare("") == 0;
+    }
+
+    bool started() {
+        return sessionId.compare("") != 0;
+    }
+
+    bool lastPortion() {
+        return size <= (offset + UPLOAD_SIZE);
+    }
+
+    QByteArray next() {
+        QByteArray data;
+        QFile file(path);
+        bool res = file.open(QIODevice::ReadOnly);
+        if (res) {
+            if (offset == 0) {
+                data = file.read(UPLOAD_SIZE);
+            } else {
+                file.seek(offset);
+//                if (lastPortion()) {
+//                    data = file.read(size - offset);
+//                } else {
+                    data = file.read(UPLOAD_SIZE);
+//                }
+            }
+            file.close();
+        } else {
+            qDebug() << "File didn't opened!!!" << endl;
+        }
+        return data;
+    }
+};
+
+class Service: public QObject {
     Q_OBJECT
 public:
     Service();
-    virtual ~Service() {}
+    virtual ~Service();
 private slots:
     void handleInvoke(const bb::system::InvokeRequest &);
     void onTimeout();
+    void onFolderCreated(QDropboxFile* folder);
+    void onError(QNetworkReply::NetworkError e, const QString& errorString);
+    void onUploadProgress(const QString& path, qint64 loaded, qint64 total);
+    void onUploadSessionStarted(const QString& remotePath, const QString& sessionId);
+    void onUploadSessionAppended(const QString& sessionId);
+    void onUploadSessionFinished(QDropboxFile* file);
+    void onUploaded(QDropboxFile* file);
+    void processUploadsQueue();
+    void onFilesAdded(const QString& path, const QStringList& addedEntries);
 
 private:
     void triggerNotification();
+    void dequeue(QDropboxFile* file = 0);
+
+    static Logger logger;
 
     bb::platform::Notification * m_notify;
     bb::system::InvokeManager * m_invokeManager;
+
+    QQueue<Upload> m_uploads;
+
+    QDropbox* m_pQdropbox;
+    Watcher m_watcher;
+    FileUtil m_fileUtil;
 };
 
 #endif /* SERVICE_H_ */
