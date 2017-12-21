@@ -24,6 +24,7 @@ public:
     virtual ~Watcher();
 
     void addPath(const QString& path);
+    void unwatch(const QString& path);
     QStringList entryList(const QString& path);
 
     Q_SIGNALS:

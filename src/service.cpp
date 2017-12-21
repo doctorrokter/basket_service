@@ -21,8 +21,12 @@
 #include <bb/platform/NotificationDefaultApplicationSettings>
 #include <bb/system/InvokeManager>
 #include <QDir>
+#include <QSettings>
 
 #include <QTimer>
+
+#define AUTOLOAD_CAMERA_FILES_ENABLED "autoload.camera.files.enabled"
+#define AUTOLOAD_CAMERA_FILES_DISABLED "autoload.camera.files.disabled"
 
 using namespace bb::platform;
 using namespace bb::system;
@@ -36,10 +40,18 @@ Service::Service() :
         QObject(),
         m_notify(new Notification(this)),
         m_invokeManager(new InvokeManager(this)),
-        m_pQdropbox(new QDropbox(this)) {
+        m_pQdropbox(new QDropbox(this)),
+        m_pCommunication(0),
+        m_watchCamera(false) {
 
-    m_invokeManager->connect(m_invokeManager, SIGNAL(invoked(const bb::system::InvokeRequest&)),
-            this, SLOT(handleInvoke(const bb::system::InvokeRequest&)));
+    QCoreApplication::setOrganizationName("mikhail.chachkouski");
+    QCoreApplication::setApplicationName("Basket");
+
+    initSignals();
+
+    QSettings qsettings;
+    m_watchCamera = qsettings.value("autoload.camera.files", false).toBool();
+    switchCameraWatching();
 
     NotificationDefaultApplicationSettings settings;
     settings.setPreview(NotificationPriorityPolicy::Allow);
@@ -49,27 +61,9 @@ Service::Service() :
     m_notify->setBody("Basket service requires attention");
 
     bb::system::InvokeRequest request;
-    request.setTarget("com.example.Basket");
+    request.setTarget("chachkouski.Basket");
     request.setAction("bb.action.START");
     m_notify->setInvokeRequest(request);
-
-    QString watchCameraPath = QDir::currentPath() + CAMERA_DIR;
-    m_watcher.addPath(watchCameraPath);
-
-    bool res = QObject::connect(m_pQdropbox, SIGNAL(folderCreated(QDropboxFile*)), this, SLOT(onFolderCreated(QDropboxFile*)));
-    Q_ASSERT(res);
-    res = QObject::connect(m_pQdropbox, SIGNAL(error(QNetworkReply::NetworkError, const QString&)), this, SLOT(onError(QNetworkReply::NetworkError, const QString&)));
-    Q_ASSERT(res);
-    res = QObject::connect(m_pQdropbox, SIGNAL(uploadSessionStarted(const QString&, const QString&)), this, SLOT(onUploadSessionStarted(const QString&, const QString&)));
-    Q_ASSERT(res);
-    res = QObject::connect(m_pQdropbox, SIGNAL(uploadSessionAppended(const QString&)), this, SLOT(onUploadSessionAppended(const QString&)));
-    Q_ASSERT(res);
-    res = QObject::connect(m_pQdropbox, SIGNAL(uploadSessionFinished(QDropboxFile*)), this, SLOT(onUploadSessionFinished(QDropboxFile*)));
-    Q_ASSERT(res);
-    res = QObject::connect(m_pQdropbox, SIGNAL(uploaded(QDropboxFile*)), this, SLOT(onUploaded(QDropboxFile*)));
-    Q_ASSERT(res);
-    res = QObject::connect(&m_watcher, SIGNAL(filesAdded(const QString&, const QStringList&)), this, SLOT(onFilesAdded(const QString&, const QStringList&)));
-    Q_UNUSED(res);
 
     m_pQdropbox->setAccessToken(ACCESS_TOKEN);
     m_pQdropbox->createFolder("/Camera");
@@ -80,11 +74,18 @@ Service::~Service() {
     m_pQdropbox->deleteLater();
     m_invokeManager->deleteLater();
     m_notify->deleteLater();
+    if (m_pCommunication != 0) {
+        delete m_pCommunication;
+        m_pCommunication = 0;
+    }
 }
 
 void Service::handleInvoke(const bb::system::InvokeRequest& request) {
-    if (request.action().compare("com.example.BasketService.RESET") == 0) {
+    QString action = request.action();
+    if (action.compare("chachkouski.BasketService.RESET") == 0) {
         triggerNotification();
+    } else if (action.compare("chachkouski.BasketService.START") == 0) {
+        establishCommunication();
     }
 }
 
@@ -189,4 +190,80 @@ void Service::dequeue(QDropboxFile* file) {
 
 void Service::onUploadProgress(const QString& path, qint64 loaded, qint64 total) {
     logger.debug("Progress for " + path + ": " + QString::number(loaded) + ", total: " + QString::number(total));
+}
+
+void Service::establishCommunication() {
+    if (m_pCommunication == 0) {
+        m_pCommunication = new HeadlessCommunication(this);
+        m_pCommunication->connect();
+        bool res = QObject::connect(m_pCommunication, SIGNAL(closed()), this, SLOT(closeCommunication()));
+        Q_ASSERT(res);
+        res = QObject::connect(m_pCommunication, SIGNAL(commandReceived(const QString&)), this, SLOT(onCommand(const QString&)));
+        Q_ASSERT(res);
+        res = QObject::connect(m_pCommunication, SIGNAL(connected()), this, SLOT(onConnectedWithUI()));
+        Q_ASSERT(res);
+        Q_UNUSED(res);
+    }
+}
+
+void Service::onConnectedWithUI() {
+    m_pCommunication->send("ok");
+    m_pCommunication->send(m_watchCamera ? AUTOLOAD_CAMERA_FILES_ENABLED : AUTOLOAD_CAMERA_FILES_DISABLED);
+}
+
+void Service::closeCommunication() {
+    if (m_pCommunication != NULL) {
+        bool res = QObject::disconnect(m_pCommunication, SIGNAL(closed()), this, SLOT(closeCommunication()));
+        Q_ASSERT(res);
+        res = QObject::disconnect(m_pCommunication, SIGNAL(commandReceived(const QString&)), this, SLOT(onCommand(const QString&)));
+        Q_ASSERT(res);
+        res = QObject::disconnect(m_pCommunication, SIGNAL(connected()), this, SLOT(onConnectedWithUI()));
+        Q_ASSERT(res);
+        Q_UNUSED(res);
+        delete m_pCommunication;
+        m_pCommunication = 0;
+    }
+}
+
+void Service::onCommand(const QString& command) {
+    logger.debug("Command from UI: " + command);
+    if (command.compare(AUTOLOAD_CAMERA_FILES_ENABLED) == 0) {
+        m_watchCamera = true;
+        switchCameraWatching();
+    } else if (command.compare(AUTOLOAD_CAMERA_FILES_DISABLED) == 0) {
+        m_watchCamera = false;
+        switchCameraWatching();
+    }
+}
+
+void Service::initSignals() {
+    m_invokeManager->connect(m_invokeManager, SIGNAL(invoked(const bb::system::InvokeRequest&)),
+                this, SLOT(handleInvoke(const bb::system::InvokeRequest&)));
+
+    bool res = QObject::connect(m_pQdropbox, SIGNAL(folderCreated(QDropboxFile*)), this, SLOT(onFolderCreated(QDropboxFile*)));
+    Q_ASSERT(res);
+    res = QObject::connect(m_pQdropbox, SIGNAL(error(QNetworkReply::NetworkError, const QString&)), this, SLOT(onError(QNetworkReply::NetworkError, const QString&)));
+    Q_ASSERT(res);
+    res = QObject::connect(m_pQdropbox, SIGNAL(uploadSessionStarted(const QString&, const QString&)), this, SLOT(onUploadSessionStarted(const QString&, const QString&)));
+    Q_ASSERT(res);
+    res = QObject::connect(m_pQdropbox, SIGNAL(uploadSessionAppended(const QString&)), this, SLOT(onUploadSessionAppended(const QString&)));
+    Q_ASSERT(res);
+    res = QObject::connect(m_pQdropbox, SIGNAL(uploadSessionFinished(QDropboxFile*)), this, SLOT(onUploadSessionFinished(QDropboxFile*)));
+    Q_ASSERT(res);
+    res = QObject::connect(m_pQdropbox, SIGNAL(uploaded(QDropboxFile*)), this, SLOT(onUploaded(QDropboxFile*)));
+    Q_ASSERT(res);
+    res = QObject::connect(&m_watcher, SIGNAL(filesAdded(const QString&, const QStringList&)), this, SLOT(onFilesAdded(const QString&, const QStringList&)));
+    Q_ASSERT(res);
+    Q_UNUSED(res);
+}
+
+void Service::switchCameraWatching() {
+    QString cam = QDir::currentPath() + CAMERA_DIR;
+    if (m_watchCamera) {
+        logger.debug("Autoload camera files enabled");
+        m_watcher.addPath(cam);
+    } else {
+        logger.debug("Autoload camera files disabled");
+        m_watcher.unwatch(cam);
+    }
 }

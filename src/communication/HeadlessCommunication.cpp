@@ -10,7 +10,7 @@
 
 #define PORT 10002
 
-Logger HeadlessCommunication::logger = Logger::getLogger("HeadlessCommunication");
+Logger HeadlessCommunication::logger = Logger::getLogger("HeadlessCommunication::Service");
 
 HeadlessCommunication::HeadlessCommunication(QObject* parent) : QObject(parent), m_pSocket(NULL) {}
 
@@ -30,7 +30,7 @@ void HeadlessCommunication::connect() {
         m_pSocket = new QTcpSocket(this);
     }
     if (!m_pSocket->isOpen()) {
-        logger.info("Connect to Last.app UI");
+        logger.info("Connect to UI");
         m_pSocket->connectToHost(QHostAddress::LocalHost, PORT);
         bool res = QObject::connect(m_pSocket, SIGNAL(connected()), this, SLOT(onConnected()));
         Q_ASSERT(res);
@@ -43,12 +43,12 @@ void HeadlessCommunication::connect() {
 }
 
 void HeadlessCommunication::onConnected() {
-    logger.info("Connected to Last.app UI.");
+    logger.info("Connected to UI.");
     emit connected();
 }
 
 void HeadlessCommunication::onDisconnected() {
-    logger.info("Disconnected from Last.app UI. Flushing signals and slots...");
+    logger.info("Disconnected from UI. Flushing signals and slots...");
     m_pSocket->close();
     bool res = QObject::disconnect(m_pSocket, SIGNAL(connected()), this, SLOT(onConnected()));
     Q_ASSERT(res);

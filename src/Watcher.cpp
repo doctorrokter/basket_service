@@ -38,6 +38,10 @@ void Watcher::addPath(const QString& path) {
     }
 }
 
+void Watcher::unwatch(const QString& path) {
+    m_paths.remove(path);
+}
+
 void Watcher::timerEvent(QTimerEvent* event) {
     foreach(QString path, m_paths.keys()) {
         QStringList newEntries = entryList(path);

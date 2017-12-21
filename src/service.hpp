@@ -28,6 +28,7 @@
 #include <QQueue>
 #include <QFile>
 #include "Watcher.hpp"
+#include "communication/HeadlessCommunication.hpp"
 
 #define UPLOAD_SIZE (1048576 / 4)
 
@@ -100,11 +101,7 @@ struct Upload : public QObject {
                 data = file.read(UPLOAD_SIZE);
             } else {
                 file.seek(offset);
-//                if (lastPortion()) {
-//                    data = file.read(size - offset);
-//                } else {
-                    data = file.read(UPLOAD_SIZE);
-//                }
+                data = file.read(UPLOAD_SIZE);
             }
             file.close();
         } else {
@@ -131,9 +128,15 @@ private slots:
     void onUploaded(QDropboxFile* file);
     void processUploadsQueue();
     void onFilesAdded(const QString& path, const QStringList& addedEntries);
+    void closeCommunication();
+    void onConnectedWithUI();
+    void onCommand(const QString& command);
 
 private:
+    void initSignals();
+    void switchCameraWatching();
     void triggerNotification();
+    void establishCommunication();
     void dequeue(QDropboxFile* file = 0);
 
     static Logger logger;
@@ -144,8 +147,12 @@ private:
     QQueue<Upload> m_uploads;
 
     QDropbox* m_pQdropbox;
+    HeadlessCommunication* m_pCommunication;
+
     Watcher m_watcher;
     FileUtil m_fileUtil;
+
+    bool m_watchCamera;
 };
 
 #endif /* SERVICE_H_ */
