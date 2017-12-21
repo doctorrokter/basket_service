@@ -207,7 +207,6 @@ void Service::establishCommunication() {
 }
 
 void Service::onConnectedWithUI() {
-    m_pCommunication->send("ok");
     m_pCommunication->send(m_watchCamera ? AUTOLOAD_CAMERA_FILES_ENABLED : AUTOLOAD_CAMERA_FILES_DISABLED);
 }
 
