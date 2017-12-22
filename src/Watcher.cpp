@@ -38,39 +38,12 @@ void Watcher::addPath(const QString& path) {
     }
 }
 
+void Watcher::unwatch(const QString& path) {
+    m_paths.remove(path);
+}
+
 void Watcher::timerEvent(QTimerEvent* event) {
-    foreach(QString path, m_paths.keys()) {
-        QStringList newEntries = entryList(path);
-
-        QString name = m_paths.value(path);
-        QFile file(QDir::currentPath() + INDEX_FILE_PLACE + name + ".txt");
-        file.open(QIODevice::ReadWrite | QIODevice::Text);
-
-        QStringList addedEntries;
-        QTextStream in(&file);
-
-        foreach(QString newE, newEntries) {
-            in.seek(0);
-            bool found = false;
-            while (!in.atEnd()) {
-                QString line = in.readLine();
-                if (line.contains(newE)) {
-                    found = true;
-                    break;
-                }
-            }
-
-            if (!found) {
-                addedEntries.append(newE);
-            }
-        }
-        file.close();
-
-        updateIndex(name, newEntries);
-        if (addedEntries.size()) {
-            emit filesAdded(path, addedEntries);
-        }
-    }
+    sync();
     Q_UNUSED(event);
 }
 
@@ -114,4 +87,39 @@ void Watcher::updateIndex(const QString& name, const QStringList& entries) {
 
     file.close();
     logger.info("Index file updated: " + name + ", entries count: " + QString::number(entries.size()) + ", file size: " + QString::number(file.size()));
+}
+
+void Watcher::sync() {
+    foreach(QString path, m_paths.keys()) {
+        QStringList newEntries = entryList(path);
+
+        QString name = m_paths.value(path);
+        QFile file(QDir::currentPath() + INDEX_FILE_PLACE + name + ".txt");
+        file.open(QIODevice::ReadWrite | QIODevice::Text);
+
+        QStringList addedEntries;
+        QTextStream in(&file);
+
+        foreach(QString newE, newEntries) {
+            in.seek(0);
+            bool found = false;
+            while (!in.atEnd()) {
+                QString line = in.readLine();
+                if (line.contains(newE)) {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                addedEntries.append(newE);
+            }
+        }
+        file.close();
+
+        updateIndex(name, newEntries);
+        if (addedEntries.size()) {
+            emit filesAdded(path, addedEntries);
+        }
+    }
 }

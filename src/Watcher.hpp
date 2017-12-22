@@ -24,7 +24,9 @@ public:
     virtual ~Watcher();
 
     void addPath(const QString& path);
+    void unwatch(const QString& path);
     QStringList entryList(const QString& path);
+    void sync();
 
     Q_SIGNALS:
         void filesAdded(const QString& path, const QStringList& addedEntries);
