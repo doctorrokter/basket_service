@@ -15,6 +15,7 @@
 #include <QDir>
 #include <QFile>
 #include <QTextStream>
+#include <QDirIterator>
 #include "Logger.hpp"
 
 class Watcher: public QObject {
