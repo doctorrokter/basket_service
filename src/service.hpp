@@ -133,10 +133,7 @@ private slots:
     void onCommand(const QString& command);
 
 private:
-    void initSignals();
-    void switchCameraWatching();
     void triggerNotification();
-    void establishCommunication();
     void dequeue(QDropboxFile* file = 0);
     void switchAutoload();
     void establishCommunication();

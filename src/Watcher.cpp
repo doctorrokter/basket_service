@@ -8,6 +8,7 @@
 #include "Watcher.hpp"
 
 #define INDEX_FILE_PLACE "/shared/misc/"
+#define INTERVAL 60000
 
 Logger Watcher::logger = Logger::getLogger("Watcher");
 
@@ -31,7 +32,7 @@ void Watcher::addPath(const QString& path) {
         updateIndex(name, entryList(path));
 
         if (m_timerId == 0) {
-            m_timerId = startTimer(60000);
+            m_timerId = startTimer(INTERVAL);
         }
     } else {
         logger.info("Path already in watching: " + path);
@@ -41,37 +42,6 @@ void Watcher::addPath(const QString& path) {
 void Watcher::unwatch(const QString& path) {
     m_paths.remove(path);
 }
-<<<<<<< HEAD
-=======
-
-void Watcher::timerEvent(QTimerEvent* event) {
-    foreach(QString path, m_paths.keys()) {
-        QStringList newEntries = entryList(path);
-
-        QString name = m_paths.value(path);
-        QFile file(QDir::currentPath() + INDEX_FILE_PLACE + name + ".txt");
-        file.open(QIODevice::ReadWrite | QIODevice::Text);
-
-        QStringList addedEntries;
-        QTextStream in(&file);
-
-        foreach(QString newE, newEntries) {
-            in.seek(0);
-            bool found = false;
-            while (!in.atEnd()) {
-                QString line = in.readLine();
-                if (line.contains(newE)) {
-                    found = true;
-                    break;
-                }
-            }
-
-            if (!found) {
-                addedEntries.append(newE);
-            }
-        }
-        file.close();
->>>>>>> dff07caffbe48a537c4a6d44723579f3ac599a58
 
 void Watcher::timerEvent(QTimerEvent* event) {
     sync();

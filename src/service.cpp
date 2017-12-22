@@ -32,6 +32,7 @@ using namespace bb::system;
 #define AUTOLOAD_SETTINGS "autoload.camera.files"
 #define AUTOLOAD_CAMERA_FILES_ENABLED "autoload.camera.files.enabled"
 #define AUTOLOAD_CAMERA_FILES_DISABLED "autoload.camera.files.disabled"
+#define SYNC_COMMAND "sync"
 
 Logger Service::logger = Logger::getLogger("Service");
 
@@ -252,5 +253,7 @@ void Service::onCommand(const QString& command) {
     } else if (command.compare(AUTOLOAD_CAMERA_FILES_DISABLED) == 0) {
         m_autoload = false;
         switchAutoload();
+    } else if (command.compare(SYNC_COMMAND) == 0) {
+        m_watcher.sync();
     }
 }
