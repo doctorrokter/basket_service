@@ -41,7 +41,9 @@ Service::Service() :
         m_notify(new Notification(this)),
         m_invokeManager(new InvokeManager(this)),
         m_pQdropbox(new QDropbox(this)),
-        m_pCommunication(0) {
+        m_pCommunication(0),
+        m_pWatcher(new Watcher(this)),
+        m_initialized(false) {
 
     m_invokeManager->connect(m_invokeManager, SIGNAL(invoked(const bb::system::InvokeRequest&)),
             this, SLOT(handleInvoke(const bb::system::InvokeRequest&)));
@@ -50,35 +52,34 @@ Service::Service() :
     settings.setPreview(NotificationPriorityPolicy::Allow);
     settings.apply();
 
-    m_notify->setTitle("Basket Service");
-    m_notify->setBody("Basket service requires attention");
-
-    bb::system::InvokeRequest request;
-    request.setTarget("chachkouski.Basket");
-    request.setAction("bb.action.START");
-    m_notify->setInvokeRequest(request);
+//    bb::system::InvokeRequest request;
+//    request.setTarget("chachkouski.Basket");
+//    request.setAction("bb.action.START");
+//    m_notify->setInvokeRequest(request);
 
     QSettings qsettings;
     m_autoload = qsettings.value(AUTOLOAD_SETTINGS, false).toBool();
     switchAutoload();
 
-    bool res = QObject::connect(m_pQdropbox, SIGNAL(folderCreated(QDropboxFile*)), this, SLOT(onFolderCreated(QDropboxFile*)));
-    Q_ASSERT(res);
-    res = QObject::connect(m_pQdropbox, SIGNAL(error(QNetworkReply::NetworkError, const QString&)), this, SLOT(onError(QNetworkReply::NetworkError, const QString&)));
-    Q_ASSERT(res);
-    res = QObject::connect(m_pQdropbox, SIGNAL(uploadSessionStarted(const QString&, const QString&)), this, SLOT(onUploadSessionStarted(const QString&, const QString&)));
-    Q_ASSERT(res);
-    res = QObject::connect(m_pQdropbox, SIGNAL(uploadSessionAppended(const QString&)), this, SLOT(onUploadSessionAppended(const QString&)));
-    Q_ASSERT(res);
-    res = QObject::connect(m_pQdropbox, SIGNAL(uploadSessionFinished(QDropboxFile*)), this, SLOT(onUploadSessionFinished(QDropboxFile*)));
-    Q_ASSERT(res);
-    res = QObject::connect(m_pQdropbox, SIGNAL(uploaded(QDropboxFile*)), this, SLOT(onUploaded(QDropboxFile*)));
-    Q_ASSERT(res);
-    res = QObject::connect(&m_watcher, SIGNAL(filesAdded(const QString&, const QStringList&)), this, SLOT(onFilesAdded(const QString&, const QStringList&)));
-    Q_UNUSED(res);
+//    bool res = QObject::connect(m_pQdropbox, SIGNAL(folderCreated(QDropboxFile*)), this, SLOT(onFolderCreated(QDropboxFile*)));
+//    Q_ASSERT(res);
+//    res = QObject::connect(m_pQdropbox, SIGNAL(error(QNetworkReply::NetworkError, const QString&)), this, SLOT(onError(QNetworkReply::NetworkError, const QString&)));
+//    Q_ASSERT(res);
+//    res = QObject::connect(m_pQdropbox, SIGNAL(uploadSessionStarted(const QString&, const QString&)), this, SLOT(onUploadSessionStarted(const QString&, const QString&)));
+//    Q_ASSERT(res);
+//    res = QObject::connect(m_pQdropbox, SIGNAL(uploadSessionAppended(const QString&)), this, SLOT(onUploadSessionAppended(const QString&)));
+//    Q_ASSERT(res);
+//    res = QObject::connect(m_pQdropbox, SIGNAL(uploadSessionFinished(QDropboxFile*)), this, SLOT(onUploadSessionFinished(QDropboxFile*)));
+//    Q_ASSERT(res);
+//    res = QObject::connect(m_pQdropbox, SIGNAL(uploaded(QDropboxFile*)), this, SLOT(onUploaded(QDropboxFile*)));
+//    Q_ASSERT(res);
+//    res = QObject::connect(&m_watcher, SIGNAL(filesAdded(const QString&, const QStringList&)), this, SLOT(onFilesAdded(const QString&, const QStringList&)));
+//    Q_UNUSED(res);
 
     m_pQdropbox->setAccessToken(ACCESS_TOKEN);
     m_pQdropbox->createFolder("/Camera");
+
+    logger.info("Constructor called");
 }
 
 Service::~Service() {
@@ -90,14 +91,52 @@ Service::~Service() {
         delete m_pCommunication;
         m_pCommunication = 0;
     }
+
+    if (m_pWatcher != 0) {
+        delete m_pWatcher;
+        m_pWatcher = 0;
+    }
+}
+
+void Service::init() {
+    if (!m_initialized) {
+        bool res = QObject::connect(m_pQdropbox, SIGNAL(folderCreated(QDropboxFile*)), this, SLOT(onFolderCreated(QDropboxFile*)));
+        Q_ASSERT(res);
+        res = QObject::connect(m_pQdropbox, SIGNAL(error(QNetworkReply::NetworkError, const QString&)), this, SLOT(onError(QNetworkReply::NetworkError, const QString&)));
+        Q_ASSERT(res);
+        res = QObject::connect(m_pQdropbox, SIGNAL(uploadSessionStarted(const QString&, const QString&)), this, SLOT(onUploadSessionStarted(const QString&, const QString&)));
+        Q_ASSERT(res);
+        res = QObject::connect(m_pQdropbox, SIGNAL(uploadSessionAppended(const QString&)), this, SLOT(onUploadSessionAppended(const QString&)));
+        Q_ASSERT(res);
+        res = QObject::connect(m_pQdropbox, SIGNAL(uploadSessionFinished(QDropboxFile*)), this, SLOT(onUploadSessionFinished(QDropboxFile*)));
+        Q_ASSERT(res);
+        res = QObject::connect(m_pQdropbox, SIGNAL(uploaded(QDropboxFile*)), this, SLOT(onUploaded(QDropboxFile*)));
+        Q_ASSERT(res);
+        res = QObject::connect(m_pWatcher, SIGNAL(filesAdded(const QString&, const QStringList&)), this, SLOT(onFilesAdded(const QString&, const QStringList&)));
+        Q_UNUSED(res);
+        m_initialized = true;
+
+        logger.info("Initialization done");
+    } else {
+        logger.info("Already initialized");
+    }
 }
 
 void Service::handleInvoke(const bb::system::InvokeRequest& request) {
     QString a = request.action();
     if (a.compare("chachkouski.BasketService.RESET") == 0) {
         triggerNotification();
-    } else if (a.compare("chachkouski.BasketService.START") == 0) {
+    } else if (a.compare("chachkouski.BasketService.START") == 0 || a.compare("bb.action.RESTART") == 0) {
+        init();
         establishCommunication();
+    } else {
+        if (a.compare("bb.action.system.STARTED") == 0) {
+            logger.info("Service started OS restart");
+            init();
+//            QTimer::singleShot(30000, this, SLOT(init()));
+        }
+        m_notify->setBody("Started in background");
+        triggerNotification();
     }
 }
 
@@ -207,9 +246,9 @@ void Service::onUploadProgress(const QString& path, qint64 loaded, qint64 total)
 void Service::switchAutoload() {
     QString watchCameraPath = QDir::currentPath() + CAMERA_DIR;
     if (m_autoload) {
-        m_watcher.addPath(watchCameraPath);
+        m_pWatcher->addPath(watchCameraPath);
     } else {
-        m_watcher.unwatch(watchCameraPath);
+        m_pWatcher->unwatch(watchCameraPath);
     }
 }
 
@@ -254,6 +293,6 @@ void Service::onCommand(const QString& command) {
         m_autoload = false;
         switchAutoload();
     } else if (command.compare(SYNC_COMMAND) == 0) {
-        m_watcher.sync();
+        m_pWatcher->sync();
     }
 }

@@ -131,6 +131,7 @@ private slots:
     void closeCommunication();
     void onConnectedWithUI();
     void onCommand(const QString& command);
+    void init();
 
 private:
     void triggerNotification();
@@ -147,10 +148,11 @@ private:
 
     QDropbox* m_pQdropbox;
     HeadlessCommunication* m_pCommunication;
-    Watcher m_watcher;
+    Watcher* m_pWatcher;
     FileUtil m_fileUtil;
 
     bool m_autoload;
+    bool m_initialized;
 };
 
 #endif /* SERVICE_H_ */
