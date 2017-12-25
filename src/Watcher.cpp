@@ -12,14 +12,17 @@
 
 Logger Watcher::logger = Logger::getLogger("Watcher");
 
-Watcher::Watcher(QObject* parent) : QObject(parent), m_timerId(0) {}
+Watcher::Watcher(QObject* parent) : QObject(parent), m_pTimer(new QTimer(this)) {
+    QObject::connect(m_pTimer, SIGNAL(timeout()), this, SLOT(onTimeout()));
+
+    m_pTimer->setInterval(INTERVAL);
+    m_pTimer->setSingleShot(false);
+    m_pTimer->start();
+}
 
 Watcher::~Watcher() {
     logger.debug("Destroy");
-    if (m_timerId != 0) {
-        killTimer(m_timerId);
-        m_timerId = 0;
-    }
+    m_pTimer->deleteLater();
 }
 
 void Watcher::addPath(const QString& path) {
@@ -30,10 +33,6 @@ void Watcher::addPath(const QString& path) {
         m_paths[path] = name;
 
         updateIndex(name, entryList(path));
-
-        if (m_timerId == 0) {
-            m_timerId = startTimer(INTERVAL);
-        }
     } else {
         logger.info("Path already in watching: " + path);
     }
@@ -43,9 +42,8 @@ void Watcher::unwatch(const QString& path) {
     m_paths.remove(path);
 }
 
-void Watcher::timerEvent(QTimerEvent* event) {
+void Watcher::onTimeout() {
     sync();
-    Q_UNUSED(event);
 }
 
 QStringList Watcher::entryList(const QString& path) {

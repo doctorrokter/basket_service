@@ -11,12 +11,12 @@
 #include <QObject>
 #include <QStringList>
 #include <QMap>
-#include <QTimerEvent>
 #include <QDir>
 #include <QFile>
 #include <QTextStream>
 #include <QDirIterator>
 #include "Logger.hpp"
+#include <QTimer>
 
 class Watcher: public QObject {
     Q_OBJECT
@@ -33,13 +33,13 @@ public:
         void filesAdded(const QString& path, const QStringList& addedEntries);
         void filesRemoved(const QString& path, const QStringList& removedEntries);
 
-protected:
-    void timerEvent(QTimerEvent* event);
+private slots:
+    void onTimeout();
 
 private:
     static Logger logger;
 
-    int m_timerId;
+    QTimer* m_pTimer;
     QMap<QString, QString> m_paths;
 
     QStringList checkForAddedEntries(const QStringList& newEntries, const QStringList& oldEntries);

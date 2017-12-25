@@ -37,7 +37,7 @@ void HeadlessCommunication::connect() {
         res = QObject::connect(m_pSocket, SIGNAL(disconnected()), this, SLOT(onDisconnected()));
         Q_ASSERT(res);
         res = QObject::connect(m_pSocket, SIGNAL(readyRead()), this, SLOT(readyRead()));
-        Q_ASSERT(true);
+        Q_ASSERT(res);
         Q_UNUSED(res);
     }
 }
@@ -55,7 +55,7 @@ void HeadlessCommunication::onDisconnected() {
     res = QObject::disconnect(m_pSocket, SIGNAL(disconnected()), this, SLOT(onDisconnected()));
     Q_ASSERT(res);
     res = QObject::disconnect(m_pSocket, SIGNAL(readyRead()), this, SLOT(readyRead()));
-    Q_ASSERT(true);
+    Q_ASSERT(res);
     Q_UNUSED(res);
 
     delete m_pSocket;
