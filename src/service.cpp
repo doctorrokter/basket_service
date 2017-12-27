@@ -21,19 +21,21 @@
 #include <bb/platform/NotificationDefaultApplicationSettings>
 #include <bb/system/InvokeManager>
 #include <QDir>
-#include <QDateTime>
-#include <QCoreApplication>
+#include <QDirIterator>
+#include <QFile>
+#include <QTextStream>
+#include <QSettings>
+
+#include <QTimer>
+
+#define AUTOLOAD_CAMERA_FILES_ENABLED "autoload.camera.files.enabled"
+#define AUTOLOAD_CAMERA_FILES_DISABLED "autoload.camera.files.disabled"
+#define CAMERA_DIR "/shared/camera"
+#define INDEX_FILE_PLACE "/shared/misc/"
+#define ACCESS_TOKEN "u_XewBWc388AAAAAAAAGvByN0abEdptmv4bv09iheXnQlZZvcgCwJwJ30xBnrCqh"
 
 using namespace bb::platform;
 using namespace bb::system;
-
-#define CAMERA_DIR "/shared/camera"
-#define ACCESS_TOKEN "u_XewBWc388AAAAAAAAGvByN0abEdptmv4bv09iheXnQlZZvcgCwJwJ30xBnrCqh"
-#define AUTOLOAD_SETTINGS "autoload.camera.files"
-#define AUTOLOAD_CAMERA_FILES_ENABLED "autoload.camera.files.enabled"
-#define AUTOLOAD_CAMERA_FILES_DISABLED "autoload.camera.files.disabled"
-#define SYNC_COMMAND "sync"
-#define QUEUE_SCANNING_INTERVAL 60000
 
 Logger Service::logger = Logger::getLogger("Service");
 
@@ -41,23 +43,20 @@ Service::Service() :
         QObject(),
         m_notify(new Notification(this)),
         m_invokeManager(new InvokeManager(this)),
+        m_pWatcher(new QFileSystemWatcher(this)),
         m_pQdropbox(new QDropbox(this)),
-        m_pCommunication(0),
-        m_pWatcher(new Watcher(this)),
-        m_pQueueWatcher(new QTimer(this)) {
+        m_autoload(false) {
 
-    m_invokeManager->connect(m_invokeManager, SIGNAL(invoked(const bb::system::InvokeRequest&)),
-            this, SLOT(handleInvoke(const bb::system::InvokeRequest&)));
+    QCoreApplication::setOrganizationName("mikhail.chachkouski");
+    QCoreApplication::setApplicationName("Basket");
 
-    NotificationDefaultApplicationSettings settings;
-    settings.setPreview(NotificationPriorityPolicy::Allow);
-    settings.apply();
+    m_invokeManager->connect(m_invokeManager, SIGNAL(invoked(const bb::system::InvokeRequest&)), this, SLOT(handleInvoke(const bb::system::InvokeRequest&)));
 
-    QSettings qsettings;
-    m_autoload = qsettings.value(AUTOLOAD_SETTINGS, false).toBool();
-    switchAutoload();
-
-    bool res = QObject::connect(m_pQdropbox, SIGNAL(folderCreated(QDropboxFile*)), this, SLOT(onFolderCreated(QDropboxFile*)));
+    bool res = QObject::connect(m_pWatcher, SIGNAL(directoryChanged(const QString&)), this, SLOT(onDirectoryChanged(const QString&)));
+    Q_ASSERT(res);
+    res = QObject::connect(m_pWatcher, SIGNAL(fileChanged(const QString&)), this, SLOT(onFileChanged(const QString&)));
+    Q_ASSERT(res);
+    res = QObject::connect(m_pQdropbox, SIGNAL(folderCreated(QDropboxFile*)), this, SLOT(onFolderCreated(QDropboxFile*)));
     Q_ASSERT(res);
     res = QObject::connect(m_pQdropbox, SIGNAL(error(QNetworkReply::NetworkError, const QString&)), this, SLOT(onError(QNetworkReply::NetworkError, const QString&)));
     Q_ASSERT(res);
@@ -69,54 +68,45 @@ Service::Service() :
     Q_ASSERT(res);
     res = QObject::connect(m_pQdropbox, SIGNAL(uploaded(QDropboxFile*)), this, SLOT(onUploaded(QDropboxFile*)));
     Q_ASSERT(res);
-    res = QObject::connect(m_pWatcher, SIGNAL(filesAdded(const QString&, const QStringList&)), this, SLOT(onFilesAdded(const QString&, const QStringList&)));
-    Q_ASSERT(res);
-    res = QObject::connect(m_pQueueWatcher, SIGNAL(timeout()), this, SLOT(processUploadsQueue()));
+    res = QObject::connect(this, SIGNAL(filesAdded(const QString&, const QStringList&)), this, SLOT(onFilesAdded(const QString&, const QStringList&)));
     Q_ASSERT(res);
     Q_UNUSED(res);
-    m_pQueueWatcher->setInterval(QUEUE_SCANNING_INTERVAL);
-    m_pQueueWatcher->setSingleShot(false);
 
     m_pQdropbox->setAccessToken(ACCESS_TOKEN);
-    m_pQdropbox->createFolder("/Camera");
 
-    logger.info("Constructor called");
-    logger.debug("PID: " + QString::number(QCoreApplication::applicationPid()));
+    NotificationDefaultApplicationSettings settings;
+    settings.setPreview(NotificationPriorityPolicy::Allow);
+    settings.apply();
+
+    m_notify->setTitle("Basket");
+    m_notify->setBody("Started in background");
+
+    bb::system::InvokeRequest request;
+    request.setTarget("chachkouski.Basket");
+    request.setAction("bb.action.START");
+    m_notify->setInvokeRequest(request);
+
+    onTimeout();
+
+    QSettings qsettings;
+    qsettings.setValue("headless.started", true);
+    qsettings.sync();
+    m_pWatcher->addPath(qsettings.fileName());
+
+    logger.debug("Constructor called");
 }
 
 Service::~Service() {
-    logger.debug("Destroy");
-    m_pQdropbox->deleteLater();
+    m_pWatcher->deleteLater();
     m_invokeManager->deleteLater();
     m_notify->deleteLater();
-    if (m_pCommunication != 0) {
-        delete m_pCommunication;
-        m_pCommunication = 0;
-    }
-
-    if (m_pWatcher != 0) {
-        delete m_pWatcher;
-        m_pWatcher = 0;
-    }
-
-    if (m_pQueueWatcher != 0) {
-        delete m_pQueueWatcher;
-        m_pQueueWatcher = 0;
-    }
+    m_pQdropbox->deleteLater();
 }
 
-void Service::handleInvoke(const bb::system::InvokeRequest& request) {
+void Service::handleInvoke(const bb::system::InvokeRequest & request) {
     QString a = request.action();
-    if (a.compare("chachkouski.BasketService.RESET") == 0) {
-        triggerNotification();
-    } else if (a.compare("chachkouski.BasketService.START") == 0) {
-        establishCommunication();
-    } else {
-        if (a.compare("bb.action.system.STARTED") == 0 || a.compare("bb.action.RESTART") == 0) {
-            logger.info("Started in background");
-            m_pQueueWatcher->start();
-        }
-        m_notify->setBody("Started in background");
+    logger.debug("Invoke action: " + a);
+    if (a.compare("chachkouski.RESET") == 0) {
         triggerNotification();
     }
 }
@@ -132,6 +122,104 @@ void Service::onTimeout() {
     m_notify->notify();
 }
 
+void Service::onDirectoryChanged(const QString& path) {
+    logger.debug("Dir changed: " + path);
+    updateIndex(path, m_paths.value(path));
+}
+
+void Service::onFileChanged(const QString& path) {
+    logger.debug("File changed: " + path);
+    if (path.contains("Basket.conf")) {
+        QSettings qsettings;
+        m_autoload = qsettings.value("autoload.camera.files", false).toBool();
+        switchAutoload();
+    }
+}
+
+void Service::switchAutoload() {
+    QString dir = QDir::currentPath() + CAMERA_DIR;
+    QString name = dir.split("/").last();
+    if (m_autoload) {
+        m_pQdropbox->createFolder("/Camera");
+        m_pWatcher->addPath(dir);
+        m_paths[dir] = name;
+        removeIndex(name);
+        createIndex(dir, name);
+    } else {
+        m_pWatcher->removePath(dir);
+        removeIndex(m_paths.value(dir));
+        m_paths.remove(dir);
+    }
+}
+
+void Service::updateIndex(const QString& path, const QString& name) {
+    QString indexPath = QDir::currentPath() + INDEX_FILE_PLACE + "/" + name + ".txt";
+    int count = 0;
+
+    QFile index(indexPath);
+    index.open(QIODevice::ReadWrite | QIODevice::Text);
+
+    QStringList added;
+    QDirIterator it(path, QDir::NoDotAndDotDot | QDir::Files);
+    QTextStream in(&index);
+
+    while(it.hasNext()) {
+        QString p = it.next();
+        count++;
+        in.seek(0);
+        bool found = false;
+        while(!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.contains(p)) {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            added.append(p);
+        }
+    }
+
+    if (added.size()) {
+        QTextStream out(&index);
+        foreach(QString newPath, added) {
+            out << newPath << endl;
+        }
+        emit filesAdded(path, added);
+    }
+    index.close();
+
+    logger.info("Index file updated: " + name + ", entries count: " + QString::number(count) + ", file size: " + QString::number(index.size()));
+}
+
+void Service::createIndex(const QString& path, const QString& name) {
+    QString indexPath = QDir::currentPath() + INDEX_FILE_PLACE + "/" + name + ".txt";
+    int count = 0;
+
+    QFile index(indexPath);
+    index.open(QIODevice::WriteOnly | QIODevice::Text);
+
+    QDirIterator it(path, QDir::NoDotAndDotDot | QDir::Files);
+    QTextStream out(&index);
+    while(it.hasNext()) {
+        count++;
+        out << it.next() << endl;
+    }
+    index.close();
+
+    logger.info("Index file created: " + name + ", entries count: " + QString::number(count) + ", file size: " + QString::number(index.size()));
+}
+
+void Service::removeIndex(const QString& name) {
+    QString indexPath = QDir::currentPath() + INDEX_FILE_PLACE + "/" + name + ".txt";
+    QFile index(indexPath);
+    if (index.exists()) {
+        index.remove();
+    }
+    logger.debug("Index file removed: " + name + ".txt");
+}
+
 void Service::onFolderCreated(QDropboxFile* folder) {
     logger.info("Folder created: " + folder->getName());
     folder->deleteLater();
@@ -143,59 +231,21 @@ void Service::onError(QNetworkReply::NetworkError e, const QString& errorString)
     dequeue();
 }
 
-void Service::onFilesAdded(const QString& path, const QStringList& addedEntries) {
-    logger.debug("Dir changed: " + path);
-    foreach(QString name, addedEntries) {
-        logger.debug("Will upload file " + name + " to /Camera/");
-
-        QString localPath = path + "/" + name;
-
-        Upload upload(localPath, "/Camera/" + name, this);
-        m_uploads.enqueue(upload);
-//        if (m_uploads.size() == 1) {
-//            processUploadsQueue();
-//        }
-    }
-}
-
-void Service::processUploadsQueue() {
-//    m_notify->setBody("Process queue " + QString::number(QDateTime::currentDateTime().toTime_t()));
-//    triggerNotification();
-    logger.debug("Process queue " + QString::number(QDateTime::currentDateTime().toTime_t()));
-    if (m_uploads.size()) {
-        logger.debug("Queue has entries. Let's process it!");
-        Upload& upload = m_uploads.head();
-        if (upload.size == 0) {
-            upload.resize();
-        }
-        qint64 offset = upload.offset;
-        if (upload.size <= UPLOAD_SIZE) {
-            QFile* file = new QFile(upload.path);
-            m_pQdropbox->upload(file, upload.remotePath);
-        } else {
-            if (upload.isNew()) {
-                m_pQdropbox->uploadSessionStart(upload.remotePath, upload.next());
-            } else {
-                if (upload.lastPortion()) {
-                    m_pQdropbox->uploadSessionFinish(upload.sessionId, upload.next(), offset, upload.remotePath);
-                } else {
-                    m_pQdropbox->uploadSessionAppend(upload.sessionId, upload.next(), offset);
-                }
-            }
-        }
-    }
+void Service::onUploadProgress(const QString& path, qint64 loaded, qint64 total) {
+    logger.debug("Progress for " + path + ": " + QString::number(loaded) + ", total: " + QString::number(total));
 }
 
 void Service::onUploadSessionStarted(const QString& remotePath, const QString& sessionId) {
-    Upload& upload = m_uploads.head();
-    upload.sessionId = sessionId;
-    upload.increment();
+    QDropboxUpload& upload = m_uploads.head();
+    upload
+        .setSessionId(sessionId)
+        .increment();
     Q_UNUSED(remotePath);
     processUploadsQueue();
 }
 
 void Service::onUploadSessionAppended(const QString& sessionId) {
-    Upload& upload = m_uploads.head();
+    QDropboxUpload& upload = m_uploads.head();
     upload.increment();
     processUploadsQueue();
     Q_UNUSED(sessionId);
@@ -207,6 +257,28 @@ void Service::onUploadSessionFinished(QDropboxFile* file) {
 
 void Service::onUploaded(QDropboxFile* file) {
     dequeue(file);
+ }
+
+void Service::processUploadsQueue() {
+    QDropboxUpload& upload = m_uploads.head();
+    if (upload.getSize() == 0) {
+        upload.resize();
+    }
+    qint64 offset = upload.getOffset();
+    if (upload.getSize() <= upload.getUploadSize()) {
+        QFile* file = new QFile(upload.getPath());
+        m_pQdropbox->upload(file, upload.getRemotePath());
+    } else {
+        if (upload.isNew()) {
+            m_pQdropbox->uploadSessionStart(upload.getRemotePath(), upload.next());
+        } else {
+            if (upload.lastPortion()) {
+                m_pQdropbox->uploadSessionFinish(upload.getSessionId(), upload.next(), offset, upload.getRemotePath());
+            } else {
+                m_pQdropbox->uploadSessionAppend(upload.getSessionId(), upload.next(), offset);
+            }
+        }
+    }
 }
 
 void Service::dequeue(QDropboxFile* file) {
@@ -226,60 +298,16 @@ void Service::dequeue(QDropboxFile* file) {
     }
 }
 
-void Service::onUploadProgress(const QString& path, qint64 loaded, qint64 total) {
-    logger.debug("Progress for " + path + ": " + QString::number(loaded) + ", total: " + QString::number(total));
-}
+void Service::onFilesAdded(const QString& path, const QStringList& files) {
+    foreach(QString localPath, files) {
+        QString name = m_fileUtil.filename(localPath);
+        logger.debug("Will upload file " + name + " to /Camera/");
 
-void Service::switchAutoload() {
-    QString watchCameraPath = QDir::currentPath() + CAMERA_DIR;
-    if (m_autoload) {
-        m_pWatcher->addPath(watchCameraPath);
-    } else {
-        m_pWatcher->unwatch(watchCameraPath);
+        QDropboxUpload upload(localPath, "/Camera/" + name, this);
+        m_uploads.enqueue(upload);
+        if (m_uploads.size() == 1) {
+            processUploadsQueue();
+        }
     }
-}
-
-void Service::establishCommunication() {
-    if (m_pCommunication == 0) {
-        m_pCommunication = new HeadlessCommunication(this);
-        m_pCommunication->connect();
-        bool res = QObject::connect(m_pCommunication, SIGNAL(closed()), this, SLOT(closeCommunication()));
-        Q_ASSERT(res);
-        res = QObject::connect(m_pCommunication, SIGNAL(commandReceived(const QString&)), this, SLOT(onCommand(const QString&)));
-        Q_ASSERT(res);
-        res = QObject::connect(m_pCommunication, SIGNAL(connected()), this, SLOT(onConnectedWithUI()));
-        Q_ASSERT(res);
-        Q_UNUSED(res);
-    }
-}
-
-void Service::onConnectedWithUI() {
-    m_pCommunication->send(m_autoload ? AUTOLOAD_CAMERA_FILES_ENABLED : AUTOLOAD_CAMERA_FILES_DISABLED);
-}
-
-void Service::closeCommunication() {
-    if (m_pCommunication != 0) {
-        bool res = QObject::disconnect(m_pCommunication, SIGNAL(closed()), this, SLOT(closeCommunication()));
-        Q_ASSERT(res);
-        res = QObject::disconnect(m_pCommunication, SIGNAL(commandReceived(const QString&)), this, SLOT(onCommand(const QString&)));
-        Q_ASSERT(res);
-        res = QObject::disconnect(m_pCommunication, SIGNAL(connected()), this, SLOT(onConnectedWithUI()));
-        Q_ASSERT(res);
-        Q_UNUSED(res);
-        delete m_pCommunication;
-        m_pCommunication = 0;
-    }
-}
-
-void Service::onCommand(const QString& command) {
-    logger.debug("Command from UI: " + command);
-    if (command.compare(AUTOLOAD_CAMERA_FILES_ENABLED) == 0) {
-        m_autoload = true;
-        switchAutoload();
-    } else if (command.compare(AUTOLOAD_CAMERA_FILES_DISABLED) == 0) {
-        m_autoload = false;
-        switchAutoload();
-    } else if (command.compare(SYNC_COMMAND) == 0) {
-        m_pWatcher->sync();
-    }
+    Q_UNUSED(path);
 }
