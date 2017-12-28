@@ -318,7 +318,7 @@ void Service::onFilesAdded(const QString& path, const QStringList& files) {
         QDropboxUpload upload(localPath, "/Camera/" + name, this);
         m_uploads.enqueue(upload);
         if (m_uploads.size() == 1) {
-            processUploadsQueue();
+            QTimer::singleShot(5000, this, SLOT(processUploadsQueue()));
         }
     }
     Q_UNUSED(path);
