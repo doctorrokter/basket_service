@@ -31,7 +31,7 @@
 #define AUTOLOAD_CAMERA_FILES_ENABLED "autoload.camera.files.enabled"
 #define AUTOLOAD_CAMERA_FILES_DISABLED "autoload.camera.files.disabled"
 #define CAMERA_DIR "/shared/camera"
-#define INDEX_FILE_PLACE "/shared/misc/"
+#define INDEX_FILE_PLACE "/data/index"
 #define ACCESS_TOKEN_KEY "dropbox.access_token"
 
 using namespace bb::platform;
@@ -201,6 +201,11 @@ void Service::updateIndex(const QString& path, const QString& name) {
 }
 
 void Service::createIndex(const QString& path, const QString& name) {
+    QDir dir(QDir::currentPath() + INDEX_FILE_PLACE);
+    if (!dir.exists()) {
+        dir.mkpath(QDir::currentPath() + INDEX_FILE_PLACE);
+    }
+
     QString indexPath = QDir::currentPath() + INDEX_FILE_PLACE + "/" + name + ".txt";
     int count = 0;
 
