@@ -32,7 +32,7 @@
 #define AUTOLOAD_CAMERA_FILES_DISABLED "autoload.camera.files.disabled"
 #define CAMERA_DIR "/shared/camera"
 #define INDEX_FILE_PLACE "/shared/misc/"
-#define ACCESS_TOKEN "u_XewBWc388AAAAAAAAGvByN0abEdptmv4bv09iheXnQlZZvcgCwJwJ30xBnrCqh"
+#define ACCESS_TOKEN_KEY "dropbox.access_token"
 
 using namespace bb::platform;
 using namespace bb::system;
@@ -71,8 +71,6 @@ Service::Service() :
     res = QObject::connect(this, SIGNAL(filesAdded(const QString&, const QStringList&)), this, SLOT(onFilesAdded(const QString&, const QStringList&)));
     Q_ASSERT(res);
     Q_UNUSED(res);
-
-    m_pQdropbox->setAccessToken(ACCESS_TOKEN);
 
     NotificationDefaultApplicationSettings settings;
     settings.setPreview(NotificationPriorityPolicy::Allow);
@@ -132,6 +130,15 @@ void Service::onFileChanged(const QString& path) {
     if (path.contains("Basket.conf")) {
         QSettings qsettings;
         m_autoload = qsettings.value("autoload.camera.files", false).toBool();
+
+        QString token = qsettings.value(ACCESS_TOKEN_KEY).toString();
+        m_pQdropbox->setAccessToken(token);
+        if (token.isEmpty()) {
+            m_autoload = false;
+            qsettings.setValue("autoload.camera.files", m_autoload);
+            qsettings.sync();
+        }
+
         switchAutoload();
     }
 }
