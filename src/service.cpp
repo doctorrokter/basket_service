@@ -20,6 +20,7 @@
 #include <bb/platform/Notification>
 #include <bb/platform/NotificationDefaultApplicationSettings>
 #include <bb/system/InvokeManager>
+#include <bb/data/JsonDataAccess>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
@@ -36,6 +37,7 @@
 
 using namespace bb::platform;
 using namespace bb::system;
+using namespace bb::data;
 
 Logger Service::logger = Logger::getLogger("Service");
 
@@ -68,6 +70,8 @@ Service::Service() :
     Q_ASSERT(res);
     res = QObject::connect(m_pQdropbox, SIGNAL(uploaded(QDropboxFile*)), this, SLOT(onUploaded(QDropboxFile*)));
     Q_ASSERT(res);
+    res = QObject::connect(m_pQdropbox, SIGNAL(urlSaved()), this, SLOT(onUrlSaved()));
+    Q_ASSERT(res);
     res = QObject::connect(this, SIGNAL(filesAdded(const QString&, const QStringList&)), this, SLOT(onFilesAdded(const QString&, const QStringList&)));
     Q_ASSERT(res);
     Q_UNUSED(res);
@@ -91,6 +95,8 @@ Service::Service() :
     qsettings.sync();
     m_pWatcher->addPath(qsettings.fileName());
 
+    m_mode = Default;
+
     logger.debug("Constructor called");
 }
 
@@ -101,12 +107,56 @@ Service::~Service() {
     m_pQdropbox->deleteLater();
 }
 
-void Service::handleInvoke(const bb::system::InvokeRequest & request) {
+void Service::handleInvoke(const bb::system::InvokeRequest& request) {
     QString a = request.action();
     logger.debug("Invoke action: " + a);
-    if (a.compare("chachkouski.RESET") == 0) {
+    if (a.compare("chachkouski.BasketService.RESET") == 0) {
         triggerNotification();
+    } else if (a.compare("chachkouski.BasketService.UPLOAD_FILES") == 0) {
+        m_mode = SharingFiles;
+
+        QByteArray data = request.data();
+        QString dataStr = data;
+        logger.debug(dataStr);
+
+        JsonDataAccess jda;
+        QVariantMap map = jda.loadFromBuffer(data).toMap();
+        QString path = map.value("path").toString();
+        QVariantList files = map.value("files").toList();
+
+        QString message = "Files will be uploaded:\n";
+
+        foreach(QVariant var, files) {
+            QString localPath = var.toString();
+            QString name = m_fileUtil.filename(localPath);
+            message.append("- " + name + "\n");
+
+            QDropboxUpload upload(localPath, path + "/" + name, this);
+            m_uploads.enqueue(upload);
+            if (m_uploads.size() == 1) {
+                processUploadsQueue();
+            }
+        }
+
+        m_notify->setBody(message);
+        triggerNotification();
+    } else if (a.compare("chachkouski.BasketService.SAVE_URL") == 0) {
+        m_mode = SharingUrl;
+
+        JsonDataAccess jda;
+        QVariantMap map = jda.loadFromBuffer(request.data()).toMap();
+
+        QString path = map.value("path").toString();
+        QString url = map.value("url").toString();
+
+        m_pQdropbox->saveUrl(path, url);
     }
+}
+
+void Service::onUrlSaved() {
+    m_mode = Default;
+    m_notify->setBody("URL saved!");
+    triggerNotification();
 }
 
 void Service::triggerNotification() {
@@ -307,6 +357,13 @@ void Service::dequeue(QDropboxFile* file) {
 
     if (m_uploads.size()) {
         processUploadsQueue();
+    } else {
+        if (m_mode == SharingFiles) {
+            m_notify->setBody("File(s) uploaded!");
+            triggerNotification();
+        }
+
+        m_mode = Default;
     }
 }
 

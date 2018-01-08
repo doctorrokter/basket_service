@@ -39,6 +39,11 @@ void myMessageOutput(QtMsgType type, const char* msg) {  // <-- ADD THIS
 int main(int argc, char **argv) {
     qInstallMsgHandler(myMessageOutput);
 
+    QTextCodec *codec1 = QTextCodec::codecForName("UTF-8");
+    QTextCodec::setCodecForLocale(codec1);
+    QTextCodec::setCodecForTr(codec1);
+    QTextCodec::setCodecForCStrings(codec1);
+
     Application app(argc, argv);
     Service srv;
     return Application::exec();

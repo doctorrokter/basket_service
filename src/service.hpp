@@ -47,6 +47,12 @@ public:
     Service();
     virtual ~Service();
 
+    enum Mode {
+        Default,
+        SharingFiles,
+        SharingUrl
+    };
+
     Q_SIGNALS:
         void filesAdded(const QString& path, const QStringList& files);
 
@@ -64,6 +70,7 @@ private slots:
     void onUploaded(QDropboxFile* file);
     void processUploadsQueue();
     void onFilesAdded(const QString& path, const QStringList& files);
+    void onUrlSaved();
 
 private:
     void triggerNotification();
@@ -82,6 +89,7 @@ private:
     bool m_autoload;
     QMap<QString, QString> m_paths;
     FileUtil m_fileUtil;
+    Mode m_mode;
 
     static Logger logger;
 };
