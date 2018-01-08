@@ -72,6 +72,8 @@ Service::Service() :
     Q_ASSERT(res);
     res = QObject::connect(m_pQdropbox, SIGNAL(urlSaved()), this, SLOT(onUrlSaved()));
     Q_ASSERT(res);
+    res = QObject::connect(m_pQdropbox, SIGNAL(uploadFailed(const QString&)), this, SLOT(onUploadFailed(const QString&)));
+    Q_ASSERT(res);
     res = QObject::connect(this, SIGNAL(filesAdded(const QString&, const QStringList&)), this, SLOT(onFilesAdded(const QString&, const QStringList&)));
     Q_ASSERT(res);
     Q_UNUSED(res);
@@ -379,4 +381,9 @@ void Service::onFilesAdded(const QString& path, const QStringList& files) {
         }
     }
     Q_UNUSED(path);
+}
+
+void Service::onUploadFailed(const QString& reason) {
+    logger.error(reason);
+    dequeue();
 }

@@ -71,6 +71,7 @@ private slots:
     void processUploadsQueue();
     void onFilesAdded(const QString& path, const QStringList& files);
     void onUrlSaved();
+    void onUploadFailed(const QString& reason);
 
 private:
     void triggerNotification();
