@@ -20,12 +20,13 @@
 #include <bb/platform/Notification>
 #include <bb/platform/NotificationDefaultApplicationSettings>
 #include <bb/system/InvokeManager>
-#include <bb/data/JsonDataAccess>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
 #include <QTextStream>
+#include <QDataStream>
 #include <QSettings>
+#include <QUrl>
 
 #include <QTimer>
 
@@ -37,7 +38,6 @@
 
 using namespace bb::platform;
 using namespace bb::system;
-using namespace bb::data;
 
 Logger Service::logger = Logger::getLogger("Service");
 
@@ -118,18 +118,18 @@ void Service::handleInvoke(const bb::system::InvokeRequest& request) {
         m_mode = SharingFiles;
 
         QByteArray data = request.data();
-        QString dataStr = data;
-        logger.debug(dataStr);
+        QDataStream in(&data, QIODevice::ReadOnly);
+        QVariantMap map;
+        in >> map;
 
-        JsonDataAccess jda;
-        QVariantMap map = jda.loadFromBuffer(data).toMap();
         QString path = map.value("path").toString();
         QVariantList files = map.value("files").toList();
 
         QString message = "Files will be uploaded:\n";
 
         foreach(QVariant var, files) {
-            QString localPath = var.toString();
+            QUrl url = QUrl::fromEncoded(var.toString().toAscii());
+            QString localPath = url.toString();
             QString name = m_fileUtil.filename(localPath);
             message.append("- " + name + "\n");
 
@@ -145,13 +145,15 @@ void Service::handleInvoke(const bb::system::InvokeRequest& request) {
     } else if (a.compare("chachkouski.BasketService.SAVE_URL") == 0) {
         m_mode = SharingUrl;
 
-        JsonDataAccess jda;
-        QVariantMap map = jda.loadFromBuffer(request.data()).toMap();
+        QByteArray data = request.data();
+        QDataStream in(&data, QIODevice::ReadOnly);
+        QVariantMap map;
+        in >> map;
 
         QString path = map.value("path").toString();
-        QString url = map.value("url").toString();
+        QUrl url = QUrl::fromEncoded(map.value("url").toString().toAscii());
 
-        m_pQdropbox->saveUrl(path, url);
+        m_pQdropbox->saveUrl(path, url.toString());
     }
 }
 
