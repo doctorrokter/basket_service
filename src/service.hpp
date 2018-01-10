@@ -28,8 +28,6 @@
 #include <QStringList>
 #include "util/FileUtil.hpp"
 
-#define UPLOAD_SIZE (1048576 / 2) // 0.5 MB
-
 namespace bb {
     class Application;
     namespace platform {

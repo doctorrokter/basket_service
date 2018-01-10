@@ -35,6 +35,8 @@
 #define CAMERA_DIR "/shared/camera"
 #define INDEX_FILE_PLACE "/data/index"
 #define ACCESS_TOKEN_KEY "dropbox.access_token"
+#define DROPBOX_UPLOAD_SIZE 157286400 // 150 MB
+#define UPLOAD_SIZE (1048576 / 2) // 0.5 MB
 
 using namespace bb::platform;
 using namespace bb::system;
@@ -95,6 +97,7 @@ Service::Service() :
     QSettings qsettings;
     qsettings.setValue("headless.started", true);
     qsettings.sync();
+    m_pQdropbox->setAccessToken(qsettings.value(ACCESS_TOKEN_KEY, "").toString());
     m_pWatcher->addPath(qsettings.fileName());
 
     m_mode = Default;
@@ -134,6 +137,7 @@ void Service::handleInvoke(const bb::system::InvokeRequest& request) {
             message.append("- " + name + "\n");
 
             QDropboxUpload upload(localPath, path + "/" + name, this);
+            upload.setUploadSize(DROPBOX_UPLOAD_SIZE);
             m_uploads.enqueue(upload);
             if (m_uploads.size() == 1) {
                 processUploadsQueue();
@@ -330,14 +334,15 @@ void Service::processUploadsQueue() {
     if (upload.getSize() == 0) {
         upload.resize();
     }
-    qint64 offset = upload.getOffset();
     if (upload.getSize() <= upload.getUploadSize()) {
         QFile* file = new QFile(upload.getPath());
         m_pQdropbox->upload(file, upload.getRemotePath());
     } else {
         if (upload.isNew()) {
+            upload.setUploadSize(UPLOAD_SIZE);
             m_pQdropbox->uploadSessionStart(upload.getRemotePath(), upload.next());
         } else {
+            qint64 offset = upload.getOffset();
             if (upload.lastPortion()) {
                 m_pQdropbox->uploadSessionFinish(upload.getSessionId(), upload.next(), offset, upload.getRemotePath());
             } else {
