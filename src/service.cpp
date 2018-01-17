@@ -97,6 +97,7 @@ Service::Service() :
     QSettings qsettings;
     qsettings.setValue("headless.started", true);
     qsettings.sync();
+    m_autoload = qsettings.value("autoload.camera.files", false).toBool();
     m_pQdropbox->setAccessToken(qsettings.value(ACCESS_TOKEN_KEY, "").toString());
     m_pWatcher->addPath(qsettings.fileName());
 
