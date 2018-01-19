@@ -49,6 +49,8 @@ Service::Service() :
         m_invokeManager(new InvokeManager(this)),
         m_pWatcher(new QFileSystemWatcher(this)),
         m_pQdropbox(new QDropbox(this)),
+        m_pDb(0),
+        m_pCache(0),
         m_autoload(false) {
 
     QCoreApplication::setOrganizationName("mikhail.chachkouski");
@@ -75,6 +77,10 @@ Service::Service() :
     res = QObject::connect(m_pQdropbox, SIGNAL(urlSaved()), this, SLOT(onUrlSaved()));
     Q_ASSERT(res);
     res = QObject::connect(m_pQdropbox, SIGNAL(uploadFailed(const QString&)), this, SLOT(onUploadFailed(const QString&)));
+    Q_ASSERT(res);
+    res = QObject::connect(m_pQdropbox, SIGNAL(jobStatusChecked(const UnshareJobStatus&)), this, SLOT(onJobStatusChecked(const UnshareJobStatus&)));
+    Q_ASSERT(res);
+    res = QObject::connect(m_pQdropbox, SIGNAL(metadataReceived(QDropboxFile*)), this, SLOT(onMetadataReceived(QDropboxFile*)));
     Q_ASSERT(res);
     res = QObject::connect(this, SIGNAL(filesAdded(const QString&, const QStringList&)), this, SLOT(onFilesAdded(const QString&, const QStringList&)));
     Q_ASSERT(res);
@@ -111,6 +117,8 @@ Service::~Service() {
     m_invokeManager->deleteLater();
     m_notify->deleteLater();
     m_pQdropbox->deleteLater();
+    m_pDb->deleteLater();
+    m_pCache->deleteLater();
 }
 
 void Service::handleInvoke(const bb::system::InvokeRequest& request) {
@@ -118,6 +126,8 @@ void Service::handleInvoke(const bb::system::InvokeRequest& request) {
     logger.debug("Invoke action: " + a);
     if (a.compare("chachkouski.BasketService.RESET") == 0) {
         triggerNotification();
+    } else if (a.compare("chachkouski.BasketService.START") == 0) {
+        initCache();
     } else if (a.compare("chachkouski.BasketService.UPLOAD_FILES") == 0) {
         m_mode = SharingFiles;
 
@@ -159,7 +169,40 @@ void Service::handleInvoke(const bb::system::InvokeRequest& request) {
         QUrl url = QUrl::fromEncoded(map.value("url").toString().toAscii());
 
         m_pQdropbox->saveUrl(path, url.toString());
+    } else if (a.compare("chachkouski.BasketService.CHECK_JOB_STATUS") == 0) {
+        QByteArray data = request.data();
+        QDataStream in(&data, QIODevice::ReadOnly);
+        QVariantMap map;
+        in >> map;
+
+        UnshareJobStatus status;
+        status.fromMap(map.value("status").toMap());
+        QString path = map.value("path").toString();
+
+        m_sharedFolderIds[status.sharedFolderId] = path;
+        m_jobStatuses[status.asyncJobId] = status;
+        m_pQdropbox->checkJobStatus(status.asyncJobId);
+    } else {
+        initCache();
     }
+}
+
+void Service::onJobStatusChecked(const UnshareJobStatus& status) {
+    if (status.status == UnshareJobStatus::Complete) {
+        UnshareJobStatus oldStatus = m_jobStatuses.value(status.asyncJobId);
+        m_pQdropbox->getMetadata(m_sharedFolderIds.value(oldStatus.sharedFolderId));
+        m_sharedFolderIds.remove(oldStatus.sharedFolderId);
+        m_jobStatuses.remove(status.asyncJobId);
+        logger.info("Job status complete: " + status.asyncJobId);
+    } else {
+        m_pQdropbox->checkJobStatus(status.asyncJobId);
+    }
+}
+
+void Service::onMetadataReceived(QDropboxFile* file) {
+    logger.debug(file->toMap());
+    m_pCache->update(file);
+    file->deleteLater();
 }
 
 void Service::onUrlSaved() {
@@ -394,4 +437,14 @@ void Service::onFilesAdded(const QString& path, const QStringList& files) {
 void Service::onUploadFailed(const QString& reason) {
     logger.error(reason);
     dequeue();
+}
+
+void Service::initCache() {
+    if (m_pDb == 0) {
+        m_pDb = new DB(this);
+    }
+
+    if (m_pCache == 0) {
+        m_pCache = new QDropboxCache(this);
+    }
 }

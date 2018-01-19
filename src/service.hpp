@@ -27,6 +27,8 @@
 #include <QQueue>
 #include <QStringList>
 #include "util/FileUtil.hpp"
+#include "cache/DB.hpp"
+#include "cache/QDropboxCache.hpp"
 
 namespace bb {
     class Application;
@@ -70,6 +72,8 @@ private slots:
     void onFilesAdded(const QString& path, const QStringList& files);
     void onUrlSaved();
     void onUploadFailed(const QString& reason);
+    void onJobStatusChecked(const UnshareJobStatus& status);
+    void onMetadataReceived(QDropboxFile* file);
 
 private:
     void triggerNotification();
@@ -78,17 +82,23 @@ private:
     void createIndex(const QString& path, const QString& name);
     void removeIndex(const QString& name);
     void dequeue(QDropboxFile* file = 0);
+    void initCache();
 
     bb::platform::Notification * m_notify;
     bb::system::InvokeManager * m_invokeManager;
     QFileSystemWatcher* m_pWatcher;
     QDropbox* m_pQdropbox;
+    DB* m_pDb;
+    QDropboxCache* m_pCache;
 
     QQueue<QDropboxUpload> m_uploads;
     bool m_autoload;
     QMap<QString, QString> m_paths;
     FileUtil m_fileUtil;
     Mode m_mode;
+
+    QMap<QString, QString> m_sharedFolderIds;
+    QMap<QString, UnshareJobStatus> m_jobStatuses;
 
     static Logger logger;
 };

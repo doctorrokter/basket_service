@@ -7,4 +7,4 @@ include($$quote($$_PRO_FILE_PWD_)/../qdropbox/static.pri)
 
 LIBS += -lbb -lbbsystem -lbbplatform -lbbnetwork -lbbdata
 
-QT += network core
+QT += network core sql
