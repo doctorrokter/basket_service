@@ -372,10 +372,12 @@ void Service::onUploadSessionAppended(const QString& sessionId) {
 }
 
 void Service::onUploadSessionFinished(QDropboxFile* file) {
+    m_pCache->add(file);
     dequeue(file);
 }
 
 void Service::onUploaded(QDropboxFile* file) {
+    m_pCache->add(file);
     dequeue(file);
  }
 
