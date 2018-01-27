@@ -51,6 +51,7 @@ Service::Service() :
         m_pQdropbox(new QDropbox(this)),
         m_pDb(0),
         m_pCache(0),
+        m_pPoller(0),
         m_autoload(false) {
 
     QCoreApplication::setOrganizationName("mikhail.chachkouski");
@@ -119,6 +120,7 @@ Service::~Service() {
     m_pQdropbox->deleteLater();
     m_pDb->deleteLater();
     m_pCache->deleteLater();
+    m_pPoller->deleteLater();
 }
 
 void Service::handleInvoke(const bb::system::InvokeRequest& request) {
@@ -182,6 +184,10 @@ void Service::handleInvoke(const bb::system::InvokeRequest& request) {
         m_sharedFolderIds[status.sharedFolderId] = path;
         m_jobStatuses[status.asyncJobId] = status;
         m_pQdropbox->checkJobStatus(status.asyncJobId);
+    } else if (a.compare("chachkouski.BasketService.START_POLLING") == 0) {
+        m_pPoller->start();
+    } else if (a.compare("chachkouski.BasketService.STOP_POLLING") == 0) {
+        m_pPoller->stop();
     } else {
         initCache();
     }
@@ -446,5 +452,10 @@ void Service::initCache() {
 
     if (m_pCache == 0) {
         m_pCache = new QDropboxCache(this);
+    }
+
+    if (m_pPoller == 0) {
+        m_pPoller = new QDropboxPoller(m_pQdropbox, m_pCache, this);
+//        m_pPoller->start();
     }
 }

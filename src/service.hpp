@@ -29,6 +29,7 @@
 #include "util/FileUtil.hpp"
 #include "cache/DB.hpp"
 #include "cache/QDropboxCache.hpp"
+#include "cache/QDropboxPoller.hpp"
 
 namespace bb {
     class Application;
@@ -90,6 +91,7 @@ private:
     QDropbox* m_pQdropbox;
     DB* m_pDb;
     QDropboxCache* m_pCache;
+    QDropboxPoller* m_pPoller;
 
     QQueue<QDropboxUpload> m_uploads;
     bool m_autoload;
